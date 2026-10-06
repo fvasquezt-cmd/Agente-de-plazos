@@ -1,0 +1,626 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="description" content="Gestor gratuito de causas y plazos procesales para Chile: cómputo de días hábiles con feriados, semáforo de urgencia y exportación a calendario.">
+<title>Libro de Plazos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,500..800&family=Public+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: expediente de trabajo. Barra superior, franja de vencimientos (semáforo), luego causas como fichas con su tabla de plazos. */
+:root{
+  --bg:#f3f4f1; --surface:#ffffff; --sunk:#e8eae5; --ink:#1c2420; --muted:#5d6862; --line:#d3d8d2;
+  --accent:#1f5c4b; --accent-ink:#ffffff; --accent-soft:#dcebe5;
+  --red:#b3261e; --red-soft:#f8dedb; --amber:#8a5a00; --amber-soft:#f8ecd0; --ok:#2d6a3e; --ok-soft:#dcefe0; --gray-soft:#ebedea;
+  --f-display:"Archivo","Arial Narrow",system-ui,sans-serif;
+  --f-body:"Public Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  --r:6px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#141a17; --surface:#1c2420; --sunk:#111613; --ink:#e6ebe7; --muted:#9aa7a0; --line:#2f3a34;
+  --accent:#6fc3a6; --accent-ink:#0e1a15; --accent-soft:#1f3a31;
+  --red:#ff8a80; --red-soft:#3d1d1a; --amber:#f0c060; --amber-soft:#3a2e12; --ok:#8fd19e; --ok-soft:#1d3323; --gray-soft:#242c28;
+  color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#141a17; --surface:#1c2420; --sunk:#111613; --ink:#e6ebe7; --muted:#9aa7a0; --line:#2f3a34;
+  --accent:#6fc3a6; --accent-ink:#0e1a15; --accent-soft:#1f3a31;
+  --red:#ff8a80; --red-soft:#3d1d1a; --amber:#f0c060; --amber-soft:#3a2e12; --ok:#8fd19e; --ok-soft:#1d3323; --gray-soft:#242c28;
+  color-scheme:dark}
+*{box-sizing:border-box}
+html{color-scheme:light}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.5}
+.wrap{max-width:1100px;margin:0 auto;padding-inline:16px;padding-block:20px 60px}
+h1,h2,h3{font-family:var(--f-display);font-stretch:85%;margin:0;text-wrap:balance;letter-spacing:-.01em}
+h1{font-size:1.9rem;font-weight:800}
+h2{font-size:1.25rem;font-weight:700}
+h3{font-size:1.05rem;font-weight:700}
+.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.muted{color:var(--muted)}
+.small{font-size:.85rem}
+.label{font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600}
+header.top{display:flex;flex-wrap:wrap;gap:12px 20px;align-items:flex-end;justify-content:space-between;padding-bottom:16px;border-bottom:2px solid var(--ink)}
+header.top .sub{color:var(--muted);font-size:.9rem;margin-top:2px}
+.actions{display:flex;flex-wrap:wrap;gap:8px}
+button,.btn{font:inherit;font-size:.9rem;font-weight:600;border-radius:var(--r);border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:8px 12px;cursor:pointer;line-height:1.2}
+button:hover{border-color:var(--muted)}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+button.ghost{background:transparent;border-color:transparent;padding:6px 8px;color:var(--muted)}
+button.ghost:hover{color:var(--ink);background:var(--sunk)}
+button.danger{color:var(--red)}
+button:disabled{opacity:.5;cursor:not-allowed}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.banner{margin-top:14px;padding:10px 12px;border-radius:var(--r);background:var(--amber-soft);color:var(--ink);font-size:.88rem}
+.banner[data-kind="info"]{background:var(--accent-soft)}
+
+/* Franja de vencimientos */
+.board{margin-top:22px}
+.board-head{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:baseline;justify-content:space-between;margin-bottom:10px}
+.counts{display:flex;flex-wrap:wrap;gap:6px}
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:.78rem;font-weight:600;padding:3px 9px;border-radius:999px;background:var(--gray-soft);color:var(--ink);white-space:nowrap}
+.chip .dot{width:8px;height:8px;border-radius:50%;background:currentColor}
+.st-vencido{background:var(--red-soft);color:var(--red)}
+.st-hoy{background:var(--red);color:#fff}
+.st-urgente{background:var(--amber-soft);color:var(--amber)}
+.st-pronto{background:var(--accent-soft);color:var(--accent)}
+.st-ok{background:var(--ok-soft);color:var(--ok)}
+.st-hecho{background:var(--gray-soft);color:var(--muted)}
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r);background:var(--surface)}
+table{border-collapse:collapse;width:100%;min-width:640px}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:.72rem;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:600;background:var(--sunk)}
+tr:last-child td{border-bottom:0}
+td.date{white-space:nowrap}
+.rowstripe{border-left:4px solid transparent}
+.rowstripe.s-vencido,.rowstripe.s-hoy{border-left-color:var(--red)}
+.rowstripe.s-urgente{border-left-color:var(--amber)}
+.rowstripe.s-pronto{border-left-color:var(--accent)}
+.rowstripe.s-ok{border-left-color:var(--ok)}
+.empty{padding:28px 16px;text-align:center;color:var(--muted)}
+.empty strong{display:block;color:var(--ink);font-family:var(--f-display);font-stretch:85%;font-size:1.15rem;margin-bottom:4px}
+
+/* Causas */
+.causas{margin-top:30px;display:grid;gap:14px}
+.causas-head{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between}
+.search{font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface);color:var(--ink);min-width:0;width:260px;max-width:100%}
+.causa{background:var(--surface);border:1px solid var(--line);border-radius:var(--r)}
+.causa-h{display:flex;flex-wrap:wrap;gap:8px 16px;justify-content:space-between;align-items:flex-start;padding:14px 16px;border-bottom:1px solid var(--line)}
+.causa-h .meta{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:.85rem;color:var(--muted);margin-top:4px}
+.causa-h .rol{font-family:var(--f-mono);font-size:.85rem;color:var(--accent);font-weight:500}
+.causa-b{padding:4px 0}
+.causa-b table{min-width:600px}
+.causa-b td,.causa-b th{background:transparent}
+.causa-b .tablewrap{border:0;border-radius:0}
+.notes{padding:10px 16px;font-size:.88rem;color:var(--muted);border-top:1px dashed var(--line);white-space:pre-wrap}
+.tag-ej{font-size:.7rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--amber);background:var(--amber-soft);border-radius:4px;padding:1px 6px;margin-left:8px;vertical-align:middle}
+.alt{display:block;font-size:.76rem;color:var(--amber);margin-top:2px}
+
+/* Dialog */
+dialog{border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);padding:0;width:min(560px,calc(100vw - 32px));max-height:calc(100dvh - 40px)}
+dialog::backdrop{background:rgb(10 15 12 / .45)}
+.dlg-h{padding:16px 18px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:10px}
+.dlg-b{padding:16px 18px;display:grid;gap:12px;overflow-y:auto}
+.dlg-f{padding:12px 18px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+.field{display:grid;gap:4px;min-width:0}
+.field label{font-size:.8rem;font-weight:600;color:var(--muted)}
+.field input,.field select,.field textarea{font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:var(--r);background:var(--bg);color:var(--ink);width:100%;min-width:0}
+.field textarea{min-height:70px;resize:vertical}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width:520px){.grid2{grid-template-columns:1fr}}
+.check{display:flex;gap:8px;align-items:flex-start;font-size:.88rem}
+.check input{margin-top:3px}
+.result{background:var(--sunk);border-radius:var(--r);padding:12px 14px;display:grid;gap:4px}
+.result .big{font-family:var(--f-display);font-stretch:85%;font-size:1.4rem;font-weight:700}
+.hint{font-size:.8rem;color:var(--muted)}
+.ai{border:1px dashed var(--line);border-radius:var(--r);padding:12px;display:grid;gap:8px}
+.fer-list{display:flex;flex-wrap:wrap;gap:6px;max-height:220px;overflow-y:auto}
+.fer{display:inline-flex;align-items:center;gap:4px;font-family:var(--f-mono);font-size:.78rem;background:var(--sunk);border-radius:4px;padding:2px 4px 2px 8px}
+.fer button{padding:0 6px;border:0;background:transparent;color:var(--muted);font-size:.9rem}
+.fer.user{background:var(--accent-soft)}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:var(--r);font-size:.9rem;z-index:50;max-width:calc(100vw - 32px)}
+footer{margin-top:36px;font-size:.8rem;color:var(--muted);max-width:70ch}
+@media (prefers-reduced-motion:no-preference){.causa,.tablewrap{transition:border-color .15s}}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>Libro de Plazos</h1>
+      <div class="sub">Causas y vencimientos procesales · feriados de Chile incluidos</div>
+    </div>
+    <div class="actions">
+      <button id="btnIcs" type="button">Exportar a calendario (.ics)</button>
+      <button id="btnBackup" type="button">Descargar respaldo</button>
+      <button id="btnRestore" type="button">Restaurar respaldo</button>
+      <input id="fileRestore" type="file" accept="application/json,.json" hidden>
+      <button id="btnAjustes" type="button">Feriados</button>
+      <button id="btnNuevaCausa" class="primary" type="button">Nueva causa</button>
+    </div>
+  </header>
+  <div id="storeBanner" class="banner" hidden></div>
+
+  <section class="board" aria-labelledby="h-venc">
+    <div class="board-head">
+      <h2 id="h-venc">Próximos vencimientos</h2>
+      <div class="counts" id="counts"></div>
+    </div>
+    <div class="tablewrap" id="boardWrap"></div>
+  </section>
+
+  <section class="causas" aria-labelledby="h-causas">
+    <div class="causas-head">
+      <h2 id="h-causas">Causas</h2>
+      <input id="q" class="search" type="search" placeholder="Buscar por rol, carátula, tribunal o cliente" aria-label="Buscar causas">
+    </div>
+    <div id="causasList" style="display:grid;gap:14px"></div>
+  </section>
+
+  <footer>
+    <p><strong>Aviso:</strong> Libro de Plazos es una herramienta de apoyo gratuita. No reemplaza la revisión del abogado ni constituye asesoría legal. El usuario es responsable de verificar cada cómputo según la norma aplicable; el autor no responde por plazos mal calculados o datos perdidos. Tus causas se guardan solo en este navegador y no se envían a ningún servidor.</p>
+    <p>    El cómputo empieza el día siguiente a la notificación. Los días hábiles excluyen domingos y feriados; puedes elegir además excluir sábados. Cuando el tratamiento del sábado cambia la fecha, la app muestra ambas. Ante la duda, trabaja con la fecha más temprana y verifica la regla del procedimiento respectivo (feria judicial, suspensiones, plazos especiales). Los feriados regionales no vienen cargados: agrégalos en Feriados.</p>
+  </footer>
+</div>
+
+<!-- Diálogo causa -->
+<dialog id="dlgCausa">
+  <form id="fCausa" method="dialog">
+    <div class="dlg-h"><h3 id="dlgCausaTitle">Nueva causa</h3><button type="button" class="ghost" data-close>Cerrar</button></div>
+    <div class="dlg-b">
+      <div class="grid2">
+        <div class="field"><label for="c_rol">Rol / RIT / RUC</label><input id="c_rol" required placeholder="C-1234-2026"></div>
+        <div class="field"><label for="c_materia">Materia</label><input id="c_materia" placeholder="Civil, laboral, familia…"></div>
+      </div>
+      <div class="field"><label for="c_caratula">Carátula</label><input id="c_caratula" placeholder="Pérez con Banco del Sur"></div>
+      <div class="grid2">
+        <div class="field"><label for="c_tribunal">Tribunal</label><input id="c_tribunal" placeholder="5° Juzgado Civil de Santiago"></div>
+        <div class="field"><label for="c_cliente">Cliente</label><input id="c_cliente"></div>
+      </div>
+      <div class="field"><label for="c_notas">Notas</label><textarea id="c_notas"></textarea></div>
+    </div>
+    <div class="dlg-f">
+      <button type="button" class="ghost danger" id="c_borrar" hidden>Eliminar causa</button>
+      <button type="button" data-close>Cancelar</button>
+      <button type="submit" class="primary">Guardar</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Diálogo plazo -->
+<dialog id="dlgPlazo">
+  <form id="fPlazo" method="dialog">
+    <div class="dlg-h"><h3 id="dlgPlazoTitle">Nuevo plazo</h3><button type="button" class="ghost" data-close>Cerrar</button></div>
+    <div class="dlg-b">
+      <div class="field"><label for="p_preset">Actuación frecuente</label>
+        <select id="p_preset"><option value="">— Elegir o escribir abajo —</option></select>
+      </div>
+      <div class="field"><label for="p_act">Actuación</label><input id="p_act" required placeholder="Contestar demanda"></div>
+      <div class="grid2">
+        <div class="field"><label for="p_notif">Fecha de notificación</label><input id="p_notif" type="date" required></div>
+        <div class="field"><label for="p_n">Plazo</label><input id="p_n" type="number" min="1" max="999" required></div>
+      </div>
+      <div class="field"><label for="p_modo">Forma de cómputo</label>
+        <select id="p_modo">
+          <option value="hab_ls">Días hábiles: lunes a sábado (sin domingos ni feriados)</option>
+          <option value="hab_lv">Días hábiles: lunes a viernes (sin sábados, domingos ni feriados)</option>
+          <option value="corridos">Días corridos</option>
+          <option value="meses">Meses</option>
+        </select>
+      </div>
+      <label class="check" id="p_prorWrap"><input type="checkbox" id="p_prorroga"> Si vence en domingo o feriado, pasa al día hábil siguiente</label>
+      <div class="result" aria-live="polite">
+        <span class="label">Vence</span>
+        <span class="big" id="p_vence">—</span>
+        <span class="hint" id="p_alt"></span>
+      </div>
+    </div>
+    <div class="dlg-f">
+      <button type="button" class="ghost danger" id="p_borrar" hidden>Eliminar plazo</button>
+      <button type="button" data-close>Cancelar</button>
+      <button type="submit" class="primary">Guardar plazo</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Diálogo feriados -->
+<dialog id="dlgAjustes">
+  <div class="dlg-h"><h3>Feriados e inhábiles</h3><button type="button" class="ghost" data-close>Cerrar</button></div>
+  <div class="dlg-b">
+    <p class="small muted" style="margin:0">Vienen cargados los feriados nacionales 2026 y 2027 (2027 preliminar: revísalo cuando se publique el calendario oficial). Agrega feriados regionales o días que tu tribunal declare inhábiles. Toca × para quitar uno.</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+      <div class="field" style="flex:1 1 160px"><label for="a_fecha">Agregar fecha</label><input id="a_fecha" type="date"></div>
+      <button type="button" id="a_add">Agregar</button>
+    </div>
+    <div class="fer-list" id="ferList"></div>
+  </div>
+  <div class="dlg-f"><button type="button" class="primary" data-close>Listo</button></div>
+</dialog>
+
+<dialog id="dlgAviso">
+  <div class="dlg-h"><h3>Antes de empezar</h3></div>
+  <div class="dlg-b">
+    <p style="margin:0">Esta es una herramienta de apoyo para calcular y ordenar plazos. <strong>No reemplaza tu revisión profesional</strong>: verifica cada vencimiento según el procedimiento aplicable (feria judicial, aumentos, plazos especiales).</p>
+    <p style="margin:0">Tus causas se guardan <strong>solo en este navegador</strong>. Si borras los datos de navegación o cambias de equipo, se pierden: descarga un respaldo con frecuencia.</p>
+  </div>
+  <div class="dlg-f"><button type="button" class="primary" id="avisoOk">Entendido</button></div>
+</dialog>
+
+<div id="toast" class="toast" hidden role="status"></div>
+
+<script>
+(function(){
+"use strict";
+
+/* ---------- Feriados nacionales ---------- */
+const FERIADOS_BASE = {
+  "2026-01-01":"Año Nuevo","2026-04-03":"Viernes Santo","2026-04-04":"Sábado Santo","2026-05-01":"Día del Trabajo",
+  "2026-05-21":"Glorias Navales","2026-06-21":"Pueblos Indígenas","2026-06-29":"San Pedro y San Pablo","2026-07-16":"Virgen del Carmen",
+  "2026-08-15":"Asunción de la Virgen","2026-09-18":"Independencia","2026-09-19":"Glorias del Ejército","2026-10-12":"Encuentro de Dos Mundos",
+  "2026-10-31":"Iglesias Evangélicas","2026-11-01":"Todos los Santos","2026-12-08":"Inmaculada Concepción","2026-12-25":"Navidad",
+  "2027-01-01":"Año Nuevo","2027-03-26":"Viernes Santo","2027-03-27":"Sábado Santo","2027-05-01":"Día del Trabajo",
+  "2027-05-21":"Glorias Navales","2027-06-20":"Pueblos Indígenas (verificar)","2027-06-28":"San Pedro y San Pablo","2027-07-16":"Virgen del Carmen",
+  "2027-08-15":"Asunción de la Virgen","2027-09-18":"Independencia","2027-09-19":"Glorias del Ejército","2027-10-11":"Encuentro de Dos Mundos",
+  "2027-10-31":"Iglesias Evangélicas","2027-11-01":"Todos los Santos","2027-12-08":"Inmaculada Concepción","2027-12-25":"Navidad"
+};
+
+/* ---------- Actuaciones frecuentes (rellenan el formulario; siempre editables) ---------- */
+const PRESETS = [
+  {a:"Contestar demanda (juicio ordinario, mismo territorio)", n:15, m:"hab_ls", ref:"CPC art. 258"},
+  {a:"Oponer excepciones (juicio ejecutivo, mismo territorio)", n:4, m:"hab_ls", ref:"CPC art. 459"},
+  {a:"Recurso de reposición", n:5, m:"hab_ls", ref:"CPC art. 181"},
+  {a:"Recurso de apelación", n:5, m:"hab_ls", ref:"CPC art. 189"},
+  {a:"Recurso de casación en la forma / fondo", n:15, m:"hab_ls", ref:"CPC art. 770"},
+  {a:"Recurso de protección", n:30, m:"corridos", ref:"Auto Acordado CS"},
+  {a:"Demanda por despido injustificado", n:60, m:"hab_ls", ref:"CT art. 168"}
+];
+
+/* ---------- Fechas (cadenas YYYY-MM-DD, aritmética en UTC) ---------- */
+const DIAS = ["dom","lun","mar","mié","jue","vie","sáb"];
+const MESES = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
+function parse(s){const [y,m,d]=s.split("-").map(Number);return new Date(Date.UTC(y,m-1,d));}
+function fmt(dt){return dt.toISOString().slice(0,10);}
+function addDays(s,k){const d=parse(s);d.setUTCDate(d.getUTCDate()+k);return fmt(d);}
+function dow(s){return parse(s).getUTCDay();}
+function todayStr(){const n=new Date();return n.getFullYear()+"-"+String(n.getMonth()+1).padStart(2,"0")+"-"+String(n.getDate()).padStart(2,"0");}
+function pretty(s){if(!s)return "—";const d=parse(s);return DIAS[d.getUTCDay()]+" "+d.getUTCDate()+" "+MESES[d.getUTCMonth()]+" "+d.getUTCFullYear();}
+
+let feriadosSet = new Set(Object.keys(FERIADOS_BASE));
+function rebuildFeriados(){
+  const s=new Set(Object.keys(FERIADOS_BASE));
+  (state.ajustes.quitados||[]).forEach(x=>s.delete(x));
+  (state.ajustes.extra||[]).forEach(x=>s.add(x));
+  feriadosSet=s;
+}
+function inhabil(s,sinSabado){const w=dow(s);return w===0||(sinSabado&&w===6)||feriadosSet.has(s);}
+function addMonths(s,k){const [y,m,d]=s.split("-").map(Number);const t=new Date(Date.UTC(y,m-1+k,1));const last=new Date(Date.UTC(t.getUTCFullYear(),t.getUTCMonth()+1,0)).getUTCDate();t.setUTCDate(Math.min(d,last));return fmt(t);}
+
+function computar(notif,n,modo,prorroga,forzarSab){
+  if(!notif||!n||n<1)return null;
+  n=Math.floor(n);
+  if(modo==="hab_ls"||modo==="hab_lv"){
+    const sinSab = forzarSab===undefined ? modo==="hab_lv" : forzarSab;
+    let d=notif,c=0,guard=0;
+    while(c<n&&guard<5000){d=addDays(d,1);if(!inhabil(d,sinSab))c++;guard++;}
+    return d;
+  }
+  let d = modo==="meses" ? addMonths(notif,n) : addDays(notif,n);
+  if(prorroga){let g=0;while(inhabil(d,!!forzarSab)&&g<60){d=addDays(d,1);g++;}}
+  return d;
+}
+function altFecha(p){
+  // fecha bajo el tratamiento contrario del sábado, si difiere
+  if(p.modo==="hab_ls"){const a=computar(p.notif,p.n,p.modo,p.prorroga,true);return a!==p.vence?{f:a,txt:"Si los sábados fueran inhábiles: "}:null;}
+  if(p.modo==="hab_lv"){const a=computar(p.notif,p.n,p.modo,p.prorroga,false);return a!==p.vence?{f:a,txt:"Si los sábados contaran: "}:null;}
+  return null;
+}
+function habilesHasta(desde,hasta){ // días hábiles lun-vie entre hoy (excl.) y vencimiento (incl.)
+  if(hasta<=desde)return 0;let d=desde,c=0,g=0;while(d<hasta&&g<2000){d=addDays(d,1);if(!inhabil(d,true))c++;g++;}return c;
+}
+function estado(p){
+  if(p.hecho)return "hecho";
+  const v=effVence(p),t=todayStr();
+  if(v<t)return "vencido";
+  if(v===t)return "hoy";
+  const h=habilesHasta(t,v);
+  if(h<=2)return "urgente";
+  if(h<=5)return "pronto";
+  return "ok";
+}
+function effVence(p){const a=altFecha(p);return a&&a.f<p.vence?a.f:p.vence;} // el semáforo usa la fecha más temprana
+const ESTADO_TXT={vencido:"Vencido",hoy:"Vence hoy",urgente:"≤ 2 días hábiles",pronto:"≤ 5 días hábiles",ok:"Con holgura",hecho:"Cumplido"};
+function faltaTxt(p){
+  if(p.hecho)return "Cumplido";
+  const v=effVence(p),t=todayStr();
+  if(v<t){const dd=Math.round((parse(t)-parse(v))/864e5);return "Venció hace "+dd+" día"+(dd===1?"":"s");}
+  if(v===t)return "Hoy";
+  const cal=Math.round((parse(v)-parse(t))/864e5),h=habilesHasta(t,v);
+  return cal+" día"+(cal===1?"":"s")+" · "+h+" hábil"+(h===1?"":"es");
+}
+
+/* ---------- Estado y almacenamiento ---------- */
+const state={causas:[],ajustes:{extra:[],quitados:[]},ready:false};
+let store=null; // {mode:'db'|'local', put(doc), del(id)}
+const LSKEY="libro-plazos-v1";
+function uid(){return Math.random().toString(36).slice(2,10)+Date.now().toString(36).slice(-4);}
+
+function lsLoad(){try{const r=localStorage.getItem(LSKEY);return r?JSON.parse(r):null;}catch(e){return null;}}
+function lsSave(){try{localStorage.setItem(LSKEY,JSON.stringify({causas:state.causas,ajustes:state.ajustes}));return true;}catch(e){return false;}}
+
+function makeLocalStore(msg){
+  const saved=lsLoad();
+  if(saved){state.causas=saved.causas||[];state.ajustes=saved.ajustes||{extra:[],quitados:[]};}
+  state.ready=true;
+  const b=document.getElementById("storeBanner");b.hidden=false;b.textContent=msg;
+  return {mode:"local",
+    put(doc){if(doc.kind==="ajustes"){state.ajustes=doc;}else{const i=state.causas.findIndex(c=>c.id===doc.id);if(i>=0)state.causas[i]=doc;else state.causas.push(doc);}lsSave();render();return Promise.resolve();},
+    del(id){state.causas=state.causas.filter(c=>c.id!==id);lsSave();render();return Promise.resolve();}
+  };
+}
+
+const chains={};
+function serial(id,fn){const p=(chains[id]||Promise.resolve()).then(fn,fn);chains[id]=p.catch(()=>{});return p;}
+
+function initStore(){
+  let ok=true;try{localStorage.setItem(LSKEY+"-t","1");localStorage.removeItem(LSKEY+"-t");}catch(e){ok=false;}
+  store=makeLocalStore(ok?"Tus datos se guardan solo en este navegador. Descarga un respaldo de vez en cuando.":"Tu navegador bloquea el almacenamiento (modo incógnito o cookies bloqueadas). Lo que ingreses se perderá al cerrar la página.");
+  document.getElementById("storeBanner").dataset.kind=ok?"info":"";
+  render();
+}
+
+/* ---------- Render ---------- */
+const $=s=>document.querySelector(s);
+function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));}
+const MODO_TXT={hab_ls:"hábiles (lun–sáb)",hab_lv:"hábiles (lun–vie)",corridos:"corridos",meses:"meses"};
+function plazoDesc(p){return p.n+" "+(p.modo==="meses"?(p.n===1?"mes":"meses"):MODO_TXT[p.modo]);}
+
+function render(){
+  rebuildFeriados();
+  // recalcular vencimientos con feriados vigentes
+  state.causas.forEach(c=>(c.plazos||[]).forEach(p=>{p.vence=computar(p.notif,p.n,p.modo,p.prorroga);}));
+  renderBoard();renderCausas();
+}
+
+function allPlazos(){const out=[];state.causas.forEach(c=>(c.plazos||[]).forEach(p=>out.push({c,p,st:estado(p)})));return out;}
+
+function renderBoard(){
+  const items=allPlazos();
+  const order={vencido:0,hoy:1,urgente:2,pronto:3,ok:4,hecho:5};
+  const pend=items.filter(x=>x.st!=="hecho").sort((a,b)=>effVence(a.p).localeCompare(effVence(b.p)));
+  const cnt={};items.forEach(x=>cnt[x.st]=(cnt[x.st]||0)+1);
+  $("#counts").innerHTML=["vencido","hoy","urgente","pronto","ok"].filter(k=>cnt[k]).map(k=>`<span class="chip st-${k}"><span class="dot"></span>${cnt[k]} ${ESTADO_TXT[k].toLowerCase()}</span>`).join("");
+  const w=$("#boardWrap");
+  if(!state.ready){w.innerHTML=`<div class="empty">Cargando tus causas…</div>`;return;}
+  if(!state.causas.length){
+    w.innerHTML=`<div class="empty"><strong>Aún no hay causas</strong>Crea una causa y agrégale plazos: la app calcula el vencimiento con los feriados y te ordena todo por urgencia.<div class="actions" style="justify-content:center;margin-top:14px"><button type="button" class="primary" data-act="nueva">Crear la primera causa</button><button type="button" data-act="ejemplo">Cargar causas de ejemplo</button></div></div>`;return;
+  }
+  if(!pend.length){w.innerHTML=`<div class="empty"><strong>Sin plazos pendientes</strong>Todo lo registrado está marcado como cumplido.</div>`;return;}
+  w.innerHTML=`<table><thead><tr><th>Vence</th><th>Falta</th><th>Actuación</th><th>Causa</th><th>Estado</th><th></th></tr></thead><tbody>${
+    pend.map(({c,p,st})=>{const a=altFecha(p);return `<tr class="rowstripe s-${st}">
+      <td class="date mono">${pretty(p.vence)}${a?`<span class="alt">${a.txt}${pretty(a.f)}</span>`:""}</td>
+      <td class="small">${faltaTxt(p)}</td>
+      <td>${esc(p.actuacion)}<div class="small muted">${plazoDesc(p)} · notif. ${pretty(p.notif)}</div></td>
+      <td><span class="mono small" style="color:var(--accent)">${esc(c.rol)}</span><div class="small muted">${esc(c.caratula||c.tribunal||"")}</div></td>
+      <td><span class="chip st-${st}">${ESTADO_TXT[st]}</span></td>
+      <td><button type="button" class="ghost" data-act="hecho" data-c="${c.id}" data-p="${p.id}">Marcar cumplido</button></td></tr>`;}).join("")
+  }</tbody></table>`;
+}
+
+function renderCausas(){
+  const q=($("#q").value||"").trim().toLowerCase();
+  const list=$("#causasList");
+  let cs=state.causas.slice();
+  if(q)cs=cs.filter(c=>[c.rol,c.caratula,c.tribunal,c.cliente,c.materia].join(" ").toLowerCase().includes(q));
+  const nextOf=c=>{const ps=(c.plazos||[]).filter(p=>!p.hecho).map(effVence).sort();return ps[0]||"9999";};
+  cs.sort((a,b)=>nextOf(a).localeCompare(nextOf(b))||String(a.rol).localeCompare(String(b.rol)));
+  if(!state.ready||!state.causas.length){list.innerHTML="";return;}
+  if(!cs.length){list.innerHTML=`<div class="empty">Ninguna causa coincide con “${esc(q)}”.</div>`;return;}
+  list.innerHTML=cs.map(c=>{
+    const ps=(c.plazos||[]).slice().sort((a,b)=>(a.hecho-b.hecho)||a.vence.localeCompare(b.vence));
+    return `<article class="causa">
+      <div class="causa-h">
+        <div style="min-width:0">
+          <div class="rol">${esc(c.rol)}${c.ejemplo?'<span class="tag-ej">Ejemplo</span>':""}</div>
+          <h3>${esc(c.caratula||"Sin carátula")}</h3>
+          <div class="meta">${c.tribunal?`<span>${esc(c.tribunal)}</span>`:""}${c.materia?`<span>${esc(c.materia)}</span>`:""}${c.cliente?`<span>Cliente: ${esc(c.cliente)}</span>`:""}</div>
+        </div>
+        <div class="actions"><button type="button" data-act="plazo" data-c="${c.id}">Agregar plazo</button><button type="button" class="ghost" data-act="editar" data-c="${c.id}">Editar</button></div>
+      </div>
+      <div class="causa-b">${ps.length?`<div class="tablewrap"><table><thead><tr><th>Actuación</th><th>Notificación</th><th>Plazo</th><th>Vence</th><th>Estado</th><th></th></tr></thead><tbody>${
+        ps.map(p=>{const st=estado(p),a=altFecha(p);return `<tr>
+          <td>${esc(p.actuacion)}</td>
+          <td class="date mono small">${pretty(p.notif)}</td>
+          <td class="small">${plazoDesc(p)}${p.prorroga&&(p.modo==="corridos"||p.modo==="meses")?" · prorroga":""}</td>
+          <td class="date mono">${pretty(p.vence)}${a?`<span class="alt">${a.txt}${pretty(a.f)}</span>`:""}</td>
+          <td><span class="chip st-${st}">${ESTADO_TXT[st]}</span></td>
+          <td style="white-space:nowrap"><button type="button" class="ghost" data-act="hecho" data-c="${c.id}" data-p="${p.id}">${p.hecho?"Reabrir":"Cumplido"}</button><button type="button" class="ghost" data-act="editplazo" data-c="${c.id}" data-p="${p.id}">Editar</button></td></tr>`;}).join("")
+      }</tbody></table></div>`:`<div class="empty small">Sin plazos registrados.</div>`}</div>
+      ${c.notas?`<div class="notes">${esc(c.notas)}</div>`:""}
+    </article>`;}).join("");
+}
+
+/* ---------- Acciones ---------- */
+function findCausa(id){return state.causas.find(c=>c.id===id);}
+let editCausaId=null,editPlazo=null;
+
+function openCausa(id){
+  editCausaId=id||null;const c=id?findCausa(id):{};
+  $("#dlgCausaTitle").textContent=id?"Editar causa":"Nueva causa";
+  ["rol","materia","caratula","tribunal","cliente","notas"].forEach(k=>$("#c_"+k).value=c[k]||"");
+  $("#c_borrar").hidden=!id;$("#c_borrar").textContent="Eliminar causa";$("#c_borrar").dataset.confirm="";
+  $("#dlgCausa").showModal();$("#c_rol").focus();
+}
+$("#fCausa").addEventListener("submit",e=>{
+  e.preventDefault();
+  const base=editCausaId?JSON.parse(JSON.stringify(findCausa(editCausaId))):{id:uid(),kind:"causa",plazos:[],creado:todayStr()};
+  ["rol","materia","caratula","tribunal","cliente","notas"].forEach(k=>base[k]=$("#c_"+k).value.trim());
+  store.put(base);$("#dlgCausa").close();toast(editCausaId?"Causa actualizada":"Causa creada");
+});
+$("#c_borrar").addEventListener("click",ev=>{
+  const b=ev.currentTarget;
+  if(!b.dataset.confirm){b.dataset.confirm="1";b.textContent="Confirmar: eliminar causa y sus plazos";return;}
+  store.del(editCausaId);$("#dlgCausa").close();toast("Causa eliminada");
+});
+
+function openPlazo(cid,pid){
+  const c=findCausa(cid);if(!c)return;
+  const p=pid?(c.plazos||[]).find(x=>x.id===pid):null;
+  editPlazo={cid,pid:pid||null};
+  $("#dlgPlazoTitle").textContent=(p?"Editar plazo · ":"Nuevo plazo · ")+(c.rol||"");
+  $("#p_preset").value="";
+  $("#p_act").value=p?p.actuacion:"";
+  $("#p_notif").value=p?p.notif:todayStr();
+  $("#p_n").value=p?p.n:"";
+  $("#p_modo").value=p?p.modo:"hab_ls";
+  $("#p_prorroga").checked=p?!!p.prorroga:false;
+  $("#p_borrar").hidden=!p;$("#p_borrar").dataset.confirm="";$("#p_borrar").textContent="Eliminar plazo";
+  updPreview();$("#dlgPlazo").showModal();
+}
+function updPreview(){
+  const modo=$("#p_modo").value;
+  $("#p_prorWrap").hidden=!(modo==="corridos"||modo==="meses");
+  const p={notif:$("#p_notif").value,n:Number($("#p_n").value),modo,prorroga:$("#p_prorroga").checked&&(modo==="corridos"||modo==="meses")};
+  p.vence=computar(p.notif,p.n,p.modo,p.prorroga);
+  $("#p_vence").textContent=p.vence?pretty(p.vence):"—";
+  let alt="";
+  if(p.vence){const a=altFecha(p);if(a)alt=a.txt+pretty(a.f)+". Usa la más temprana si no tienes certeza.";
+    else if(feriadosSet.has(p.vence)||dow(p.vence)===0)alt="Atención: la fecha cae en domingo o feriado.";}
+  $("#p_alt").textContent=alt;
+}
+["p_notif","p_n","p_modo","p_prorroga"].forEach(id=>$("#"+id).addEventListener("input",updPreview));
+$("#p_preset").innerHTML+=PRESETS.map((x,i)=>`<option value="${i}">${esc(x.a)} · ${x.n} ${x.m==="corridos"?"días corridos":"días"} (${esc(x.ref)})</option>`).join("");
+$("#p_preset").addEventListener("change",()=>{const x=PRESETS[$("#p_preset").value];if(!x)return;$("#p_act").value=x.a;$("#p_n").value=x.n;$("#p_modo").value=x.m;updPreview();});
+$("#fPlazo").addEventListener("submit",e=>{
+  e.preventDefault();
+  const c=JSON.parse(JSON.stringify(findCausa(editPlazo.cid)));c.plazos=c.plazos||[];
+  const modo=$("#p_modo").value;
+  const p={id:editPlazo.pid||uid(),actuacion:$("#p_act").value.trim(),notif:$("#p_notif").value,n:Math.floor(Number($("#p_n").value)),modo,
+    prorroga:$("#p_prorroga").checked&&(modo==="corridos"||modo==="meses"),hecho:false};
+  p.vence=computar(p.notif,p.n,p.modo,p.prorroga);
+  if(!p.vence){toast("Revisa la fecha de notificación y el plazo.");return;}
+  const i=c.plazos.findIndex(x=>x.id===p.id);
+  if(i>=0){p.hecho=c.plazos[i].hecho;c.plazos[i]=p;}else c.plazos.push(p);
+  store.put(c);$("#dlgPlazo").close();toast("Plazo guardado: vence el "+pretty(p.vence));
+});
+$("#p_borrar").addEventListener("click",ev=>{
+  const b=ev.currentTarget;
+  if(!b.dataset.confirm){b.dataset.confirm="1";b.textContent="Confirmar eliminación";return;}
+  const c=JSON.parse(JSON.stringify(findCausa(editPlazo.cid)));c.plazos=(c.plazos||[]).filter(x=>x.id!==editPlazo.pid);
+  store.put(c);$("#dlgPlazo").close();toast("Plazo eliminado");
+});
+
+function toggleHecho(cid,pid){
+  const c=JSON.parse(JSON.stringify(findCausa(cid)));const p=(c.plazos||[]).find(x=>x.id===pid);if(!p)return;
+  p.hecho=!p.hecho;store.put(c);toast(p.hecho?"Marcado como cumplido":"Plazo reabierto");
+}
+
+function cargarEjemplo(){
+  const t=todayStr(),back=k=>addDays(t,-k);
+  const ej=[
+    {rol:"C-4821-2026",caratula:"Rojas con Inmobiliaria Los Aromos SpA",tribunal:"12° Juzgado Civil de Santiago",materia:"Civil · cumplimiento de contrato",cliente:"Marta Rojas",notas:"Ejemplo: borra esta causa cuando agregues las tuyas.",
+      plazos:[{actuacion:"Contestar demanda (juicio ordinario, mismo territorio)",notif:back(9),n:15,modo:"hab_ls"},{actuacion:"Recurso de reposición",notif:back(3),n:5,modo:"hab_ls"}]},
+    {rol:"O-1137-2026",caratula:"Fuentes con Transportes Norte Ltda.",tribunal:"2° Juzgado de Letras del Trabajo de Santiago",materia:"Laboral · despido",cliente:"Luis Fuentes",notas:"",
+      plazos:[{actuacion:"Recurso de apelación",notif:back(4),n:5,modo:"hab_ls"}]},
+    {rol:"Protección 9020-2026",caratula:"Vega con Isapre del Pacífico",tribunal:"Corte de Apelaciones de Santiago",materia:"Recurso de protección",cliente:"Ana Vega",notas:"",
+      plazos:[{actuacion:"Interponer recurso de protección",notif:back(2),n:30,modo:"corridos",prorroga:false}]}
+  ];
+  ej.forEach(e=>{store.put({id:uid(),kind:"causa",ejemplo:true,creado:t,rol:e.rol,caratula:e.caratula,tribunal:e.tribunal,materia:e.materia,cliente:e.cliente,notas:e.notas,
+    plazos:e.plazos.map(p=>Object.assign({id:uid(),hecho:false,prorroga:false},p,{vence:computar(p.notif,p.n,p.modo,p.prorroga)}))});});
+  toast("Se cargaron 3 causas de ejemplo");
+}
+
+/* ---------- Feriados ---------- */
+function renderFer(){
+  rebuildFeriados();
+  const arr=[...feriadosSet].sort();const extra=new Set(state.ajustes.extra||[]);
+  $("#ferList").innerHTML=arr.map(d=>`<span class="fer${extra.has(d)?" user":""}" title="${esc(FERIADOS_BASE[d]||"Agregado por ti")}">${d}<button type="button" aria-label="Quitar ${d}" data-fer="${d}">×</button></span>`).join("");
+}
+$("#btnAjustes").addEventListener("click",()=>{renderFer();$("#dlgAjustes").showModal();});
+$("#a_add").addEventListener("click",()=>{
+  const d=$("#a_fecha").value;if(!d)return;
+  const aj={kind:"ajustes",extra:[...new Set([...(state.ajustes.extra||[]),d])].sort(),quitados:(state.ajustes.quitados||[]).filter(x=>x!==d)};
+  store.put(aj);$("#a_fecha").value="";renderFer();toast("Día inhábil agregado. Los vencimientos se recalcularon.");
+});
+$("#ferList").addEventListener("click",e=>{
+  const d=e.target.dataset&&e.target.dataset.fer;if(!d)return;
+  const aj={kind:"ajustes",extra:(state.ajustes.extra||[]).filter(x=>x!==d),quitados:(state.ajustes.quitados||[]).slice()};
+  if(FERIADOS_BASE[d]&&!aj.quitados.includes(d))aj.quitados.push(d);
+  store.put(aj);renderFer();toast("Fecha quitada. Los vencimientos se recalcularon.");
+});
+
+/* ---------- Exportar .ics ---------- */
+function icsText(){
+  const lines=["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Libro de Plazos//ES","CALSCALE:GREGORIAN"];
+  const stamp=new Date().toISOString().replace(/[-:]/g,"").slice(0,15)+"Z";
+  const escI=s=>String(s||"").replace(/\\/g,"\\\\").replace(/;/g,"\\;").replace(/,/g,"\\,").replace(/\n/g,"\\n");
+  allPlazos().filter(x=>x.st!=="hecho").forEach(({c,p})=>{
+    const v=effVence(p),d=v.replace(/-/g,""),e=addDays(v,1).replace(/-/g,"");
+    lines.push("BEGIN:VEVENT","UID:"+p.id+"@libro-plazos","DTSTAMP:"+stamp,"DTSTART;VALUE=DATE:"+d,"DTEND;VALUE=DATE:"+e,
+      "SUMMARY:"+escI("Vence: "+p.actuacion+" · "+c.rol),
+      "DESCRIPTION:"+escI((c.caratula||"")+"\n"+(c.tribunal||"")+"\nPlazo: "+plazoDesc(p)+", notificado "+p.notif),
+      "BEGIN:VALARM","ACTION:DISPLAY","DESCRIPTION:"+escI("Plazo en 3 días: "+p.actuacion),"TRIGGER:-P3D","END:VALARM",
+      "BEGIN:VALARM","ACTION:DISPLAY","DESCRIPTION:"+escI("Plazo mañana: "+p.actuacion),"TRIGGER:-P1D","END:VALARM",
+      "END:VEVENT");
+  });
+  lines.push("END:VCALENDAR");return lines.join("\r\n");
+}
+function bajar(nombre,texto,tipo){
+  const url=URL.createObjectURL(new Blob([texto],{type:tipo}));
+  const a=document.createElement("a");a.href=url;a.download=nombre;document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),2000);
+}
+$("#btnIcs").addEventListener("click",()=>{
+  if(!allPlazos().some(x=>x.st!=="hecho")){toast("No hay plazos pendientes para exportar.");return;}
+  bajar("plazos.ics",icsText(),"text/calendar");toast("Abre el archivo para importarlo en tu calendario.");
+});
+$("#btnBackup").addEventListener("click",()=>{
+  const data={app:"libro-de-plazos",version:1,fecha:todayStr(),causas:state.causas,ajustes:state.ajustes};
+  bajar("respaldo-plazos-"+todayStr()+".json",JSON.stringify(data,null,2),"application/json");toast("Respaldo descargado");
+});
+$("#btnRestore").addEventListener("click",()=>$("#fileRestore").click());
+$("#fileRestore").addEventListener("change",async e=>{
+  const f=e.target.files[0];e.target.value="";if(!f)return;
+  try{
+    const d=JSON.parse(await f.text());
+    if(d.app!=="libro-de-plazos"||!Array.isArray(d.causas))throw new Error("formato");
+    const ids=new Set(state.causas.map(c=>c.id));let n=0;
+    d.causas.forEach(c=>{if(c&&c.id&&!ids.has(c.id)&&c.kind==="causa"){state.causas.push(c);n++;}});
+    if(d.ajustes){state.ajustes={kind:"ajustes",extra:[...new Set([...(state.ajustes.extra||[]),...(d.ajustes.extra||[])])].sort(),quitados:[...new Set([...(state.ajustes.quitados||[]),...(d.ajustes.quitados||[])])]};}
+    lsSave();render();toast(n?"Se restauraron "+n+" causa"+(n===1?"":"s"):"El respaldo no trae causas nuevas");
+  }catch(err){toast("Ese archivo no es un respaldo válido de Libro de Plazos.");}
+});
+
+/* ---------- Aviso inicial ---------- */
+(function(){let visto=false;try{visto=localStorage.getItem(LSKEY+"-aviso")==="1";}catch(e){}
+  if(!visto)$("#dlgAviso").showModal();
+  $("#avisoOk").addEventListener("click",()=>{try{localStorage.setItem(LSKEY+"-aviso","1");}catch(e){}$("#dlgAviso").close();});
+})();
+
+/* ---------- Delegación de eventos ---------- */
+document.addEventListener("click",e=>{
+  const t=e.target.closest("[data-act],[data-close]");if(!t)return;
+  if(t.hasAttribute("data-close")){t.closest("dialog").close();return;}
+  const a=t.dataset.act;
+  if(a==="nueva")openCausa();
+  else if(a==="ejemplo")cargarEjemplo();
+  else if(a==="editar")openCausa(t.dataset.c);
+  else if(a==="plazo")openPlazo(t.dataset.c);
+  else if(a==="editplazo")openPlazo(t.dataset.c,t.dataset.p);
+  else if(a==="hecho")toggleHecho(t.dataset.c,t.dataset.p);
+});
+$("#btnNuevaCausa").addEventListener("click",()=>openCausa());
+$("#q").addEventListener("input",renderCausas);
+
+let tt=null;
+function toast(m){const el=$("#toast");el.textContent=m;el.hidden=false;clearTimeout(tt);tt=setTimeout(()=>el.hidden=true,3200);}
+
+render();
+initStore();
+setInterval(()=>{if(state.ready)renderBoard();},60*60*1000); // refresca el semáforo si la página queda abierta
+})();
+</script>
+
+</body>
+</html>
